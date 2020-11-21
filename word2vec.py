@@ -1,12 +1,14 @@
 import re
 import MeCab
-from gensim.models import word2vec
+from gensim.models import Word2Vec
+from tqdm import tqdm
+
 
 # 形態素解析
 def tokenize(sentence):
     mecab = MeCab.Tagger('-Owakati')
     text = mecab.parse(sentence)
-    return [text.strip()]
+    return text.strip().split()
 
 
 # ファイル読み込み
@@ -28,14 +30,14 @@ text = train_text + valid_text + test_text
 
 # 二次元配列で形態素を管理
 token_data = []
-for sentence in text:
+for sentence in tqdm(text):
     token_data.append(tokenize(sentence))
 
-model = word2vec.Word2Vec(sentences=token_data,
-                             vector_size=300,
-                             window=5,
-                             min_count=1,
-                             workers=8,
-                             epochs=100)
-
+# word2vecモデル学習（gensim version 3.80）
+model = Word2Vec(sentences=token_data,
+                 size=300,
+                 window=5,
+                 min_count=1,
+                 workers=8)
+# 保存
 model.save("data/word2vec.model")
