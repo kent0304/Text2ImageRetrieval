@@ -30,7 +30,6 @@ total = 101790
 with open('data/text/train.txt') as f:
     for line in tqdm(f, total=total):
         recipe = line.split('\t')
-        recipe_vec = []
         for step in recipe:
             # 形態素解析
             mecab = MeCab.Tagger("-Owakati")
@@ -42,13 +41,8 @@ with open('data/text/train.txt') as f:
                     sentence.append(model.wv[token])
                 else:
                     continue
-            # l = len(sentence)
-            # sentence = np.array(sentence)
             sentence = np.array(sentence).mean(axis=0)
-            recipe_vec.append(sentence)
-        recipesvec_train.append(recipe_vec)
-
-print(recipesvec_train[:2])
+            recipesvec_train.append(sentence)
 
 # 検証用
 recipesvec_valid = []
@@ -56,7 +50,6 @@ total = 11324
 with open('data/text/valid.txt') as f:
     for line in tqdm(f, total=total):
         recipe = line.split('\t')
-        recipe_vec = []
         for step in recipe:
             # 形態素解析
             mecab = MeCab.Tagger("-Owakati")
@@ -68,19 +61,16 @@ with open('data/text/valid.txt') as f:
                     sentence.append(model.wv[token])
                 else:
                     continue
-            # l = len(sentence)
-            # sentence = np.array(sentence)
             sentence = np.array(sentence).mean(axis=0)
-            recipe_vec.append(sentence)
-        recipesvec_valid.append(recipe_vec)
-
+            recipesvec_valid.append(sentence)
+   
 # テスト用
 recipesvec_test = []
 total = 12546
 with open('data/text/test.txt') as f:
     for line in tqdm(f, total=total):
         recipe = line.split('\t')
-        recipe_vec = []
+        # recipe_vec = []
         for step in recipe:
             # 形態素解析
             mecab = MeCab.Tagger("-Owakati")
@@ -92,24 +82,40 @@ with open('data/text/test.txt') as f:
                     sentence.append(model.wv[token])
                 else:
                     continue
-            # l = len(sentence)
-            # sentence = np.array(sentence)
             sentence = np.array(sentence).mean(axis=0)
-            recipe_vec.append(sentence)
-        recipesvec_test.append(recipe_vec)
+            recipesvec_test.append(sentence)
 
-print(len(recipesvec_train))
-print(len(recipesvec_valid))
-print(len(recipesvec_test))
+# ベクトル化したテキストのnumpyを保存            
+np.save('data/textvec/recipesvec_train',recipesvec_train)
+np.save('data/textvec/recipesvec_valid',recipesvec_valid)
+np.save('data/textvec/recipesvec_test',recipesvec_test)
+
+    
+# print(len(recipesvec_test))
+# print(type(recipesvec_test))
+# recipesvec_test = np.array(recipesvec_test)
+# print(len(recipesvec_test))
+# print(type(recipesvec_test))
+# print(recipesvec_test.shape)
+# print(recipesvec_test[0])
+# print(type(recipesvec_test[0]))
+# print(recipesvec_test[0].shape)
 
 
-# デバッグ
-# step = 'ルッコラは洗って水気を拭き取る。 豚バラは一口大にカットしてみじん切りにしたらパセリ、塩コショウで下味をつける。'
+
+
+
+
+
+
+# # デバッグ
+# step = 'ﾓﾝｽﾀｰﾎﾞｰﾙを作ります。ﾊﾑの上にｽﾗｲｽﾁｰｽﾞを乗せます。	ｶﾆｶﾏは赤い部分と白い部分に分け赤い部分をﾁｰｽﾞの上に乗せます。	丸い型を用意してｶﾆｶﾏの直線がだいたい真中になる様に合わせて型を抜きます。	こんな感じになります。	海苔を画像の様に直線と丸に切り貼ります。ｽﾗｲｽﾁｰｽﾞを適当な丸に切り乗せて完成！ﾁｰｽﾞは爪楊枝で簡単に切れます。	ﾋﾟﾁｭｰを作ります。ｵｰﾌﾞﾝｼｰﾄにﾋﾟﾁｭｰを写したのと輪郭だけ写したのを用意します。	輪郭の方はﾊｻﾐで切り取っておきソレをﾁｪﾀﾞｰﾁｰｽﾞの上に乗せて爪楊枝で切ります。	更にハムの上に置きます。	最初に写したﾋﾟﾁｭｰを海苔の上に置きｽﾞﾚない様に黒い部分を切り抜きます。	切った海苔を配置します。	目はｽﾗｲｽﾁｰｽﾞで丸く作りﾏﾖﾈｰｽﾞで貼り付けます。	カニカマでホッペを作りﾏﾖﾈｰｽﾞで貼り付けて周りのハムを丁寧に切り取り出来上がり。'
 # # 形態素解析
 # me = MeCab.Tagger("-Owakati")
 # me_list = me.parse(step).split()
 # # 文章をベクトル化
 # sentence = []
+# print(me_list)
 # for token in me_list:
 #     if token in model.wv:
 #         sentence.append(model.wv[token])
@@ -122,6 +128,7 @@ print(len(recipesvec_test))
 # sentence = np.array(sentence).mean(axis=0)
 # print(type(sentence))
 # print(sentence.shape)
+# print(sentence)
 
 
 
