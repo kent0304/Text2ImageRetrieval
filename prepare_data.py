@@ -1,3 +1,6 @@
+# テキスト情報はtrain, valid, testにわけ, data/textに格納
+# 画像はgeneratorでtrain, vali, testごとにパスを用意
+
 import os
 import csv
 import glob
@@ -82,29 +85,29 @@ for recipe in recipe_test:
     else:
         continue
 
-# マルチプロセッシング
-with Pool() as p:
-    step_text_train = p.map(read_file, recipe_dirs_train)
-    step_text_valid = p.map(read_file, recipe_dirs_valid)
-    step_text_test = p.map(read_file, recipe_dirs_test)
+# # マルチプロセッシング
+# with Pool() as p:
+#     step_text_train = p.map(read_file, recipe_dirs_train)
+#     step_text_valid = p.map(read_file, recipe_dirs_valid)
+#     step_text_test = p.map(read_file, recipe_dirs_test)
 
 
 
-# 学習用レシピテキストファイル書き込み
-with open('data/text/train.txt', mode='w') as f:
-    for steps in step_text_train:
-        f.write('\t'.join(steps))
-        f.write('\n')
-# 検証用レシピテキストファイル書き込み
-with open('data/text/valid.txt','w') as f:
-    for steps in step_text_valid:
-        f.write('\t'.join(steps))
-        f.write('\n')
-# # 試験用レシピテキストファイル書き込み
-with open('data/text/test.txt','w') as f:
-    for steps in step_text_test:
-        f.write('\t'.join(steps))
-        f.write('\n')
+# # 学習用レシピテキストファイル書き込み
+# with open('data/text/train.txt', mode='w') as f:
+#     for steps in step_text_train:
+#         f.write('\t'.join(steps))
+#         f.write('\n')
+# # 検証用レシピテキストファイル書き込み
+# with open('data/text/valid.txt','w') as f:
+#     for steps in step_text_valid:
+#         f.write('\t'.join(steps))
+#         f.write('\n')
+# # # 試験用レシピテキストファイル書き込み
+# with open('data/text/test.txt','w') as f:
+#     for steps in step_text_test:
+#         f.write('\t'.join(steps))
+#         f.write('\n')
 
 
 
