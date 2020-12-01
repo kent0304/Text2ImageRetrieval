@@ -1,4 +1,4 @@
-# テキスト情報はtrain, valid, testにわけ, data/textに格納
+# テキスト情報はtrain, valid, testにわけ, /mnt/LSTA5/data/tanaka/retrieval/textに格納
 # 画像はgeneratorでtrain, vali, testごとにパスを用意
 
 import os
@@ -145,82 +145,95 @@ step_text_test = []
 # ------------------------------------------------------------------------------------------------------------------------
 # 画像とテキストまとめてデータセットにする（画像のないデータが存在するので）
 # 訓練用のレシピの画像のパスを管理
-train_dataset = []
-for recipe in tqdm(recipe_train, total=len(recipe_train)):
-    # テキスト
-    recipe_dir = relation_dict[recipe]
-    # 3桁いないのディレクトリ名は前にを足してパス変更
-    if len(recipe_dir) < 4:
-        num = 4 - len(recipe_dir)
-        recipe_dir = cookpad_path + recipe_info + '0' * num + recipe_dir + '/' + recipe + '/' + 'step_memos.txt'
-    else:
-        continue
-    recipe_text = read_file(recipe_dir)
-    # 画像
-    head = recipe[0]
-    path = cookpad_path + img_path + head + '/' + recipe + '*'
-    img_dir_train = listup_imgs(path)
-    # 画像の存在するステップのみデータセットに保存
-    for step in natsorted(img_dir_train):
-        # このステップの写真とテキスト
-        image_path = step
-        text = recipe_text[int(step[-5:-4])-1]
-        train_dataset.append([text, image_path])
+# train_dataset = []
+def make_dataset(recipe_data, relation_dict):
+    # データセットのパス
+    cookpad_path = '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/'
+    recipe_train = 'recipe_ids/train.txt'
+    recipe_valid = 'recipe_ids/val.txt'
+    recipe_test = 'recipe_ids/test.txt'
+    file_relation = 'cookpad_nii/main/file_relation_list.txt'
+    recipe_info = 'cookpad_nii/main/'
+    img_path = 'images/steps/'
+    for recipe in tqdm(recipe_data, total=len(recipe_data)):
+        # テキスト
+        recipe_dir = relation_dict[recipe]
+        # 3桁いないのディレクトリ名は前にを足してパス変更
+        if len(recipe_dir) < 4:
+            num = 4 - len(recipe_dir)
+            recipe_dir = cookpad_path + recipe_info + '0' * num + recipe_dir + '/' + recipe + '/' + 'step_memos.txt'
+        else:
+            continue
+        recipe_text = read_file(recipe_dir)
+        # 画像
+        head = recipe[0]
+        path = cookpad_path + img_path + head + '/' + recipe + '*'
+        img_dir_train = listup_imgs(path)
+        # 画像の存在するステップのみデータセットに保存
+        for step in natsorted(img_dir_train):
+            # このステップの写真とテキスト
+            image_path = step
+            text = recipe_text[int(step[-5:-4])-1]
+            yield text, image_path
+            # train_dataset.append([text, image_path])
 
 
-# 検証用のレシピの画像のパスを管理
-valid_dataset = []
-for recipe in tqdm(recipe_valid, total=len(recipe_valid)):
-    # テキスト
-    recipe_dir = relation_dict[recipe]
-    # 3桁いないのディレクトリ名は前にを足してパス変更
-    if len(recipe_dir) < 4:
-        num = 4 - len(recipe_dir)
-        recipe_dir = cookpad_path + recipe_info + '0' * num + recipe_dir + '/' + recipe + '/' + 'step_memos.txt'
-    else:
-        continue
-    recipe_text = read_file(recipe_dir)
-    # 画像
-    head = recipe[0]
-    path = cookpad_path + img_path + head + '/' + recipe + '*'
-    img_dir_valid = listup_imgs(path)
-    # 画像の存在するステップのみデータセットに保存
-    for step in natsorted(img_dir_valid):
-        # このステップの写真とテキスト
-        image_path = step
-        text = recipe_text[int(step[-5:-4])-1]
-        valid_dataset.append([text, image_path])
+# # 検証用のレシピの画像のパスを管理
+# valid_dataset = []
+# for recipe in tqdm(recipe_valid, total=len(recipe_valid)):
+#     # テキスト
+#     recipe_dir = relation_dict[recipe]
+#     # 3桁いないのディレクトリ名は前にを足してパス変更
+#     if len(recipe_dir) < 4:
+#         num = 4 - len(recipe_dir)
+#         recipe_dir = cookpad_path + recipe_info + '0' * num + recipe_dir + '/' + recipe + '/' + 'step_memos.txt'
+#     else:
+#         continue
+#     recipe_text = read_file(recipe_dir)
+#     # 画像
+#     head = recipe[0]
+#     path = cookpad_path + img_path + head + '/' + recipe + '*'
+#     img_dir_valid = listup_imgs(path)
+#     # 画像の存在するステップのみデータセットに保存
+#     for step in natsorted(img_dir_valid):
+#         # このステップの写真とテキスト
+#         image_path = step
+#         text = recipe_text[int(step[-5:-4])-1]
+#         valid_dataset.append([text, image_path])
 
 
-# 試験用のレシピの画像のパスを管理
-test_dataset = []
-for recipe in tqdm(recipe_test, total=len(recipe_test)):
-    # テキスト
-    recipe_dir = relation_dict[recipe]
-    # 3桁いないのディレクトリ名は前にを足してパス変更
-    if len(recipe_dir) < 4:
-        num = 4 - len(recipe_dir)
-        recipe_dir = cookpad_path + recipe_info + '0' * num + recipe_dir + '/' + recipe + '/' + 'step_memos.txt'
-    else:
-        continue
-    recipe_text = read_file(recipe_dir)
-    # 画像
-    head = recipe[0]
-    path = cookpad_path + img_path + head + '/' + recipe + '*'
-    img_dir_test = listup_imgs(path)
-    # 画像の存在するステップのみデータセットに保存
-    for step in natsorted(img_dir_test):
-        # このステップの写真とテキスト
-        image_path = step
-        text = recipe_text[int(step[-5:-4])-1]
-        test_dataset.append([text, image_path])
+# # 試験用のレシピの画像のパスを管理
+# test_dataset = []
+# for recipe in tqdm(recipe_test, total=len(recipe_test)):
+#     # テキスト
+#     recipe_dir = relation_dict[recipe]
+#     # 3桁いないのディレクトリ名は前にを足してパス変更
+#     if len(recipe_dir) < 4:
+#         num = 4 - len(recipe_dir)
+#         recipe_dir = cookpad_path + recipe_info + '0' * num + recipe_dir + '/' + recipe + '/' + 'step_memos.txt'
+#     else:
+#         continue
+#     recipe_text = read_file(recipe_dir)
+#     # 画像
+#     head = recipe[0]
+#     path = cookpad_path + img_path + head + '/' + recipe + '*'
+#     img_dir_test = listup_imgs(path)
+#     # 画像の存在するステップのみデータセットに保存
+#     for step in natsorted(img_dir_test):
+#         # このステップの写真とテキスト
+#         image_path = step
+#         text = recipe_text[int(step[-5:-4])-1]
+#         test_dataset.append([text, image_path])
 
+train_dataset = make_dataset(recipe_train, relation_dict)
+valid_dataset = make_dataset(recipe_valid, relation_dict)
+test_dataset = make_dataset(recipe_test, relation_dict)
 
 # [[text, image_path]]のデータセットをpickleで保存
 # ストレージに直列化
-with open('data/dataset/train_dataset.bin.pkl', mode='wb') as fp:
+with open('/mnt/LSTA5/data/tanaka/retrieval/dataset/train_dataset.bin.pkl', mode='wb') as fp:
     pickle.dump(train_dataset, fp)
-with open('data/dataset/valid_dataset.bin.pkl', mode='wb') as fp:
+with open('/mnt/LSTA5/data/tanaka/retrieval/dataset/valid_dataset.bin.pkl', mode='wb') as fp:
     pickle.dump(valid_dataset, fp)
-with open('data/dataset/test_dataset.bin.pkl', mode='wb') as fp:
+with open('/mnt/LSTA5/data/tanaka/retrieval/dataset/test_dataset.bin.pkl', mode='wb') as fp:
     pickle.dump(test_dataset, fp)

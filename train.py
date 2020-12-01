@@ -1,3 +1,8 @@
+import os
+import re
+import csv
+import glob
+import pathlib
 import torch
 from torch import nn, optim
 import numpy as np
@@ -5,18 +10,30 @@ from tqdm import tqdm
 import MeCab
 import pickle
 import random
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
+# import matplotlib
+# matplotlib.use('Agg')
+# import matplotlib.pyplot as plt
+from natsort import natsorted
 from PIL import Image
+from multiprocessing import Pool
 from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader
 from emb_image import OriginalResNet
 from gensim.models import Word2Vec
 
+# special_dataset = [
+#     ['ルッコラは洗って水気を拭き取る。 豚バラは一口大にカットしてみじん切りにしたらパセリ、塩コショウで下味をつける。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_1.jpg'],
+#     ['パスタを茹で始める。8分', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_2.jpg'],
+#     ['にんにくを温めたら豚バラを炒める。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_3.jpg'],
+#     ['豚バラの色が変わったらルッコラを入れて軽く火を通す。 トマト缶を投入。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_4.jpg'],
+#     ['しばらくコトコト。パスタの茹で汁と塩で味を調整。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_5.jpg'],
+#     ['茹で上がったパスタを投入。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_6.jpg'],
+#     ['盛りつけたら完成。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_7.jpg']
+# ]
+
 
 # レシピコーパスで学習したWord2Vec
-model = Word2Vec.load("data/word2vec.model")
+model = Word2Vec.load("/mnt/LSTA5/data/tanaka/data/word2vec.model")
 # GPU対応
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # 損失関数
@@ -38,17 +55,22 @@ class MyDataset(Dataset):
         self.sentence_vec = []
         self.image_vec = []
         for text, image_path in tqdm(dataset, total=self.data_num):
+            if text=='' or image_path=='':
+                continue
             # 形態素解析
             mecab = MeCab.Tagger("-Owakati")
             token_list = mecab.parse(text).split()
             # 文全体をベクトル化
-            sentence = []
+            # sentence = []
+            sentence_sum = np.zeros(text_model.wv.vectors.shape[1], )
             for token in token_list:
                 if token in text_model.wv:
-                    sentence.append(text_model.wv[token])
+                    sentence_sum += text_model.wv[token]
+                    # sentence.append(text_model.wv[token])
                 else:
                     continue
-            sentence = np.array(sentence).mean(axis=0)
+            sentence = sentence_sum / len(token_list)
+            # sentence = np.array(sentence).mean(axis=0)
             sentence = torch.from_numpy(sentence).clone()
             self.sentence_vec.append(sentence)
 
@@ -65,41 +87,119 @@ class MyDataset(Dataset):
         return sentence_vec, image_vec
 
 
+# ファイルの読み込み
+def read_file(file):
+    recipe_text = []
+    # 平仮名片仮名英数字を検出する正規表現
+    p = '[\u3041-\u309F]+|[\u30A1-\u30F4]+|[a-zA-Z\-[\]]+'
+    with open(file) as f:
+        steps = f.readlines()
+    for step in steps:
+        if step == '':
+            if '\t' in step:
+                step = step.split('\t')[1].rstrip()
+                recipe_text.append(step)
+        obj = re.search(p, step)
+        if obj:
+            # 先頭文字が番号かどうか正規表現で確認
+            m = re.match(r'\d{2}.*', step)
+            # 先頭文字が番号でなければ前の行から続き
+            if m is None:
+                if len(recipe_text)>0:
+                    recipe_text[-1] += step.strip()
+                else:
+                    continue
+            # 先頭文字が番号の場合
+            else: 
+                if '\t' in step:
+                    step = step.split('\t')[1].rstrip()
+                    recipe_text.append(step)
+        else:
+            continue
+    return recipe_text
 
-# # デバッグ
-# image_path = '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0fffdec2d05716551f0531714536cba6c235a7d0_7.jpg'
-# image = Image.open(image_path)
-# image_vec = net(transformer(image).unsqueeze(0))
-# print(image_vec.shape)
+# フォルダ内の画像をジェネレータで出力
+def listup_imgs(path):
+    return list(os.path.abspath(p) for p in glob.glob(path))
 
-# Datasetを作成
-非直列化して利用
-with open('data/dataset/train_dataset.bin.pkl', mode='rb') as fp:
-    train_dataset = pickle.load(fp)
-with open('data/dataset/valid_dataset.bin.pkl', mode='rb') as fp:
-    valid_dataset = pickle.load(fp)
-with open('data/dataset/test_dataset.bin.pkl', mode='rb') as fp:
-    test_dataset = pickle.load(fp)
+# train, valid, test それぞれのレシピID（ハッシュ列取得）
+def get_hash(data):
+    with open(f'/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/recipe_ids/{data}.txt') as f:
+        return [line.strip() for line in f.readlines()]
 
-# path = '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/075409b4165e900458b343462ffb531f7fccc60d_5.jpg'
-# image = Image.open(path).convert('RGB')
-# image = transformer(image)
+def make_dataset(recipe_data):
+    # 二次元配列で返す
+    dataset = []
+    # recipe_ids（ハッシュ列） とそれがどのディレクトリに保存されてるか記してるファイル読み込み
+    with open('/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/cookpad_nii/main/file_relation_list.txt') as f:
+        file_relation_list = [line.strip().split('\t') for line in f.readlines()]
 
-# special_dataset = [
-#     ['ルッコラは洗って水気を拭き取る。 豚バラは一口大にカットしてみじん切りにしたらパセリ、塩コショウで下味をつける。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_1.jpg'],
-#     ['パスタを茹で始める。8分', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_2.jpg'],
-#     ['にんにくを温めたら豚バラを炒める。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_3.jpg'],
-#     ['豚バラの色が変わったらルッコラを入れて軽く火を通す。 トマト缶を投入。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_4.jpg'],
-#     ['しばらくコトコト。パスタの茹で汁と塩で味を調整。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_5.jpg'],
-#     ['茹で上がったパスタを投入。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_6.jpg'],
-#     ['盛りつけたら完成。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_7.jpg']
-# ]
+    # recipeid と 保存されているディレクトリ のペアの dictionary
+    relation_dict = {k: v for (k,v) in file_relation_list}
 
-print('pickleで読み込んだデータセットをDatasetに変換中...')
+    print('確認しながらテキストと画像のpathを回収していく〜')
+    for recipe in tqdm(recipe_data, total=len(recipe_data)):
+        # テキスト
+        recipe_dir = relation_dict[recipe]
+        # 3桁いないのディレクトリ名は前にを足してパス変更
+        if len(recipe_dir) < 4:
+            num = 4 - len(recipe_dir)
+            recipe_dir = '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/cookpad_nii/main/' + '0' * num + recipe_dir + '/' + recipe + '/' + 'step_memos.txt'
+        else:
+            continue
+        # テキストファイル読み込み
+        recipe_text = read_file(recipe_dir)
+
+
+        # 画像
+        head = recipe[0]
+        path = '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/' + head + '/' + recipe + '*'
+        # globは返すリストの順序を保証しないのでnatsortedで辞書順ソート
+        img_paths = natsorted(glob.glob(path))
+        if len(recipe_text) != len(img_paths):
+            continue
+            # print('あかん')
+            # print('ハッシュ値：', recipe)
+            # print('テキストのパスは')
+            # print(recipe_dir)
+            # print('テキスト数は')
+            # print(len(recipe_text))
+            # print('テキストは')
+            # print(recipe_text)
+            # print('画像のパスは')
+            # print(img_paths)
+
+        # 画像は余分にあるのでテキスト基準で
+        for i in range(len(recipe_text)):
+            dataset.append([recipe_text[i], img_paths[i]])
+
+    return dataset
+ 
+print('train/valid/testに分けられたハッシュ列取得...')
+recipe_train = get_hash('train')
+recipe_valid = get_hash('val')
+recipe_test = get_hash('test')
+
+print('データセットから二次元配列に生テキストと画像パス保管中...')
+train_dataset = make_dataset(recipe_train)
+valid_dataset = make_dataset(recipe_valid)
+test_dataset = make_dataset(recipe_test)
+
+# pickleで保存
+print('pickleで保存')
+with open('/mnt/LSTA5/data/tanaka/data/dataset/train_dataset.pkl', 'wb') as f:
+    pickle.dump(train_dataset, f) 
+with open('/mnt/LSTA5/data/tanaka/data/dataset/valid_dataset.pkl', 'wb') as f:
+    pickle.dump(valid_dataset, f) 
+with open('/mnt/LSTA5/data/tanaka/data/dataset/test_dataset.pkl', 'wb') as f:
+    pickle.dump(test_dataset, f) 
+
+
+print('データセットをDatasetに変換中...')
 # Datasetに変換
-train_dataset = Dataset2Tensor(train_dataset)
-valid_dataset = Dataset2Tensor(valid_dataset)
-test_dataset = Dataset2Tensor(test_dataset)
+train_dataset = MyDataset(train_dataset)
+valid_dataset = MyDataset(valid_dataset)
+test_dataset = MyDataset(test_dataset)
 # special_dataset = MyDataset(special_dataset)
 
 
@@ -194,22 +294,22 @@ def train_net(image_net, train_loader, valid_loader, train_dataset, valid_datase
         # 学習モデル保存
         if (epoch+1)%5==0:
             # 学習させたモデルの保存パス
-            model_path = f'data/model/model_{epoch+1}.pth'
+            model_path = f'/mnt/LSTA5/data/tanaka/data/model/model_{epoch+1}.pth'
             # モデル保存
             torch.save(image_net.state_dict(), model_path)
 
-    # グラフ描画
-    # my_plot(np.linspace(1, n_iter, n_iter).astype(int), train_losses, valid_losses)
+#     # グラフ描画
+#     # my_plot(np.linspace(1, n_iter, n_iter).astype(int), train_losses, valid_losses)
 
 
-def my_plot(epochs, train_losses, valid_losses):
-    # グラフの描画先の準備
-    fig = plt.figure()
-    # グラフ描画
-    plt.plot(epochs, train_losses, color = 'red')
-    plt.plot(epochs, valid_losses, color = 'blue')
-    # グラフをファイルに保存する
-    fig.savefig("img.png")
+# def my_plot(epochs, train_losses, valid_losses):
+#     # グラフの描画先の準備
+#     fig = plt.figure()
+#     # グラフ描画
+#     plt.plot(epochs, train_losses, color = 'red')
+#     plt.plot(epochs, valid_losses, color = 'blue')
+#     # グラフをファイルに保存する
+#     fig.savefig("img.png")
 
 train_net(image_net, train_loader=special_loader, valid_loader=special_loader, train_dataset=special_dataset, valid_dataset=special_dataset,  device=device)
 
