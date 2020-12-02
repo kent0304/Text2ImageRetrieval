@@ -53,7 +53,7 @@ class MyDataset(Dataset):
     def __init__(self, dataset, text_model=model, transformer=transformer):
         self.data_num = len(dataset)
         self.sentence_vec = []
-        self.image_vec = []
+        self.image_paths = []
         for text, image_path in tqdm(dataset, total=self.data_num):
             if text=='' or image_path=='':
                 continue
@@ -61,30 +61,27 @@ class MyDataset(Dataset):
             mecab = MeCab.Tagger("-Owakati")
             token_list = mecab.parse(text).split()
             # 文全体をベクトル化
-            # sentence = []
             sentence_sum = np.zeros(text_model.wv.vectors.shape[1], )
             for token in token_list:
                 if token in text_model.wv:
                     sentence_sum += text_model.wv[token]
-                    # sentence.append(text_model.wv[token])
                 else:
                     continue
             sentence = sentence_sum / len(token_list)
-            # sentence = np.array(sentence).mean(axis=0)
             sentence = torch.from_numpy(sentence).clone()
             self.sentence_vec.append(sentence)
 
             # 画像のベクトル化
-            image = transformer(Image.open(image_path).convert('RGB'))
-            self.image_vec.append(image)
+            # image = transformer(Image.open(image_path).convert('RGB'))
+            self.image_paths.append(image_path)
     
     def __len__(self):
         return self.data_num
 
     def __getitem__(self, idx):
         sentence_vec = self.sentence_vec[idx]
-        image_vec = self.image_vec[idx]
-        return sentence_vec, image_vec
+        image_path = self.image_paths[idx]
+        return sentence_vec, image_path
 
 
 # ファイルの読み込み
@@ -181,18 +178,26 @@ recipe_valid = get_hash('val')
 recipe_test = get_hash('test')
 
 print('データセットから二次元配列に生テキストと画像パス保管中...')
-train_dataset = make_dataset(recipe_train)
-valid_dataset = make_dataset(recipe_valid)
-test_dataset = make_dataset(recipe_test)
+# train_dataset = make_dataset(recipe_train)
+# valid_dataset = make_dataset(recipe_valid)
+# test_dataset = make_dataset(recipe_test)
 
-# pickleで保存
-print('pickleで保存')
-with open('/mnt/LSTA5/data/tanaka/data/dataset/train_dataset.pkl', 'wb') as f:
-    pickle.dump(train_dataset, f) 
-with open('/mnt/LSTA5/data/tanaka/data/dataset/valid_dataset.pkl', 'wb') as f:
-    pickle.dump(valid_dataset, f) 
-with open('/mnt/LSTA5/data/tanaka/data/dataset/test_dataset.pkl', 'wb') as f:
-    pickle.dump(test_dataset, f) 
+# # pickleで保存
+# print('pickleで保存')
+# with open('/mnt/LSTA5/data/tanaka/data/dataset/train_dataset.pkl', 'wb') as f:
+#     pickle.dump(train_dataset, f) 
+# with open('/mnt/LSTA5/data/tanaka/data/dataset/valid_dataset.pkl', 'wb') as f:
+#     pickle.dump(valid_dataset, f) 
+# with open('/mnt/LSTA5/data/tanaka/data/dataset/test_dataset.pkl', 'wb') as f:
+#     pickle.dump(test_dataset, f) 
+
+# pickleで読み込み
+with open('/mnt/LSTA5/data/tanaka/data/dataset/train_dataset.pkl', 'rb') as f:
+    train_dataset = pickle.load(f)
+with open('/mnt/LSTA5/data/tanaka/data/dataset/valid_dataset.pkl', 'rb') as f:
+    valid_dataset = pickle.load(f)
+with open('/mnt/LSTA5/data/tanaka/data/dataset/test_dataset.pkl', 'rb') as f:
+    test_dataset = pickle.load(f)
 
 
 print('データセットをDatasetに変換中...')
@@ -201,6 +206,15 @@ train_dataset = MyDataset(train_dataset)
 valid_dataset = MyDataset(valid_dataset)
 test_dataset = MyDataset(test_dataset)
 # special_dataset = MyDataset(special_dataset)
+
+# pickleで保存
+print('pickleで保存')
+with open('/mnt/LSTA5/data/tanaka/data/torch_dataset/train_dataset.pkl', 'wb') as f:
+    pickle.dump(train_dataset, f) 
+with open('/mnt/LSTA5/data/tanaka/data/torch_dataset/valid_dataset.pkl', 'wb') as f:
+    pickle.dump(valid_dataset, f) 
+with open('/mnt/LSTA5/data/tanaka/data/torch_dataset/test_dataset.pkl', 'wb') as f:
+    pickle.dump(test_dataset, f) 
 
 
 print('DatasetをDataLoaderにセッティング中...')
@@ -215,21 +229,27 @@ def eval_net(image_net, data_loader, dataset, loss=triplet_loss, device="cpu"):
     image_net.eval()
     outputs = []
     for i, (x, y) in enumerate(data_loader):
+        y = y[0]
         # 乱数によりnegative選出
         while True:
             random_idx = random.randint(0, len(dataset)-1)
-            negative = dataset[random_idx][1].unsqueeze(0)
-            
+            negative = dataset[random_idx][1]
             if negative is not y:
                 break
-        # GPU設定
-        x = x.to(device)
-        y = y.to(device)
-        negative = negative.to(device)
+
         # 画像ベクトルの推測値
         with torch.no_grad():
+            # 画像ベクトル化
+            y = transformer(Image.open(y).convert('RGB')).unsqueeze(0)
+            negative = transformer(Image.open(negative).convert('RGB')).unsqueeze(0)
+            # GPU設定
+            x = x.to(device)
+            y = y.to(device)
+            negative = negative.to(device)
+            # 推論
             y = image_net(y)
             negative = image_net(negative)
+
 
         anchor = x
         positive = y 
@@ -245,7 +265,7 @@ def eval_net(image_net, data_loader, dataset, loss=triplet_loss, device="cpu"):
 
 
 # モデルの学習
-def train_net(image_net, train_loader, valid_loader, train_dataset, valid_dataset, only_fc=True, loss=triplet_loss, n_iter=20, device='cpu'):
+def train_net(image_net, train_loader, valid_loader, train_dataset, valid_dataset, only_fc=True, loss=triplet_loss, n_iter=400, device='cpu'):
     train_losses = []
     valid_losses = []
     image_net = image_net.to(device)
@@ -261,21 +281,26 @@ def train_net(image_net, train_loader, valid_loader, train_dataset, valid_datase
         image_net.train()
         # xxはテキストanchor、yyはpositive画像
         for i, (xx, yy) in tqdm(enumerate(train_loader), total=len(train_loader)):
+            yy = yy[0]
             # 乱数によりnegative選出
             while True:
                 random_idx = random.randint(0, len(train_dataset)-1)
-                negative = train_dataset[random_idx][1].unsqueeze(0)
+                negative = train_dataset[random_idx][1]
                 if negative is not yy:
                     break
+            
+            # 画像ベクトルの推測値
+            # 画像のベクトル化
+            yy = transformer(Image.open(yy).convert('RGB')).unsqueeze(0)
+            negative = transformer(Image.open(negative).convert('RGB')).unsqueeze(0)
             # GPU設定
             xx = xx.to(device)
             yy = yy.to(device)
             negative = negative.to(device)
-
-            # 画像ベクトルの推測値
+            # 推論
             yy = image_net(yy)
             negative = image_net(negative)
-            
+
             anchor = xx
             positive = yy 
             output = loss(anchor, positive, negative)
@@ -292,11 +317,17 @@ def train_net(image_net, train_loader, valid_loader, train_dataset, valid_datase
         valid_losses.append(pred_valid)
         print('epoch:' +  str(epoch+1), ', train loss:'+ str(train_losses[-1]), ', valid loss:' + str(valid_losses[-1]), flush=True)
         # 学習モデル保存
-        if (epoch+1)%5==0:
+        if (epoch+1)%50==0:
             # 学習させたモデルの保存パス
             model_path = f'/mnt/LSTA5/data/tanaka/data/model/model_{epoch+1}.pth'
             # モデル保存
-            torch.save(image_net.state_dict(), model_path)
+            torch.save(image_net.to('cpu').state_dict(), model_path)
+        # loss保存
+        with open('/mnt/LSTA5/data/tanaka/data/losses/train_losses.pkl', 'wb') as f:
+            pickle.dump(train_losses, f) 
+        with open('/mnt/LSTA5/data/tanaka/data/losses/valid_losses.pkl', 'wb') as f:
+            pickle.dump(valid_losses, f) 
+
 
 #     # グラフ描画
 #     # my_plot(np.linspace(1, n_iter, n_iter).astype(int), train_losses, valid_losses)
@@ -311,5 +342,7 @@ def train_net(image_net, train_loader, valid_loader, train_dataset, valid_datase
 #     # グラフをファイルに保存する
 #     fig.savefig("img.png")
 
-train_net(image_net, train_loader=special_loader, valid_loader=special_loader, train_dataset=special_dataset, valid_dataset=special_dataset,  device=device)
+train_net(image_net, train_loader=train_loader, valid_loader=valid_loader, train_dataset=train_dataset, valid_dataset=valid_dataset,  device=device)
+
+# train_net(image_net, train_loader=special_loader, valid_loader=special_loader, train_dataset=special_dataset, valid_dataset=special_dataset,  device=device)
 
