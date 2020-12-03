@@ -1,239 +1,216 @@
-# テキスト情報はtrain, valid, testにわけ, /mnt/LSTA5/data/tanaka/retrieval/textに格納
-# 画像はgeneratorでtrain, vali, testごとにパスを用意
-
 import os
+import re
 import csv
 import glob
+import pathlib
+import torch
+from torch import nn, optim
+import numpy as np
+from tqdm import tqdm
+import MeCab
 import pickle
-from multiprocessing import Pool
-from tqdm import tqdm 
+import random
 from natsort import natsorted
+from PIL import Image
+from multiprocessing import Pool
+from torchvision import transforms
+from torch.utils.data import Dataset, DataLoader
+from emb_image import OriginalResNet, TripletModel
+from gensim.models import Word2Vec
+
+# special_dataset = [
+#     ['ルッコラは洗って水気を拭き取る。 豚バラは一口大にカットしてみじん切りにしたらパセリ、塩コショウで下味をつける。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_1.jpg'],
+#     ['パスタを茹で始める。8分', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_2.jpg'],
+#     ['にんにくを温めたら豚バラを炒める。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_3.jpg'],
+#     ['豚バラの色が変わったらルッコラを入れて軽く火を通す。 トマト缶を投入。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_4.jpg'],
+#     ['しばらくコトコト。パスタの茹で汁と塩で味を調整。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_5.jpg'],
+#     ['茹で上がったパスタを投入。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_6.jpg'],
+#     ['盛りつけたら完成。', '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/0/0c6aad2feba89eb88219e69c2b9b15c8a1d62045_7.jpg']
+# ]
+
+
+# レシピコーパスで学習したWord2Vec
+model = Word2Vec.load("/mnt/LSTA5/data/tanaka/data/word2vec.model")
+# GPU対応
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# 損失関数
+triplet_loss = nn.TripletMarginLoss()
+# netにはモデルを代入
+image_net = OriginalResNet()
+# 学習させるモデル
+triplet_model = TripletModel()
+# 画像を Tensor に変換
+transformer = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    # transforms.RandomCrop(256),
+])
+
+class MyDataset(Dataset):
+    def __init__(self, dataset, text_model=model, transformer=transformer):
+        self.data_num = len(dataset)
+        self.sentence_vec = []
+        self.image_paths = []
+        for text, image_path in tqdm(dataset, total=self.data_num):
+            if text=='' or image_path=='':
+                continue
+            # 形態素解析
+            mecab = MeCab.Tagger("-Owakati")
+            token_list = mecab.parse(text).split()
+            # 文全体をベクトル化
+            sentence_sum = np.zeros(text_model.wv.vectors.shape[1], )
+            for token in token_list:
+                if token in text_model.wv:
+                    sentence_sum += text_model.wv[token]
+                else:
+                    continue
+            sentence = sentence_sum / len(token_list)
+            sentence = torch.from_numpy(sentence).clone()
+            self.sentence_vec.append(sentence)
+
+            # 画像のベクトル化
+            # image = transformer(Image.open(image_path).convert('RGB'))
+            self.image_paths.append(image_path)
+    
+    def __len__(self):
+        return self.data_num
+
+    def __getitem__(self, idx):
+        sentence_vec = self.sentence_vec[idx]
+        image_path = self.image_paths[idx]
+        return sentence_vec, image_path
 
 
 # ファイルの読み込み
 def read_file(file):
+    recipe_text = []
+    # 平仮名片仮名英数字を検出する正規表現
+    p = '[\u3041-\u309F]+|[\u30A1-\u30F4]+|[a-zA-Z\-[\]]+'
     with open(file) as f:
-        step = [line.strip() for line in f.readlines()]
-        step = [line.split('\t')[1] if '\t' in line else line for line in step]
-    return step
+        steps = f.readlines()
+    for step in steps:
+        if step == '':
+            if '\t' in step:
+                step = step.split('\t')[1].rstrip()
+                recipe_text.append(step)
+        obj = re.search(p, step)
+        if obj:
+            # 先頭文字が番号かどうか正規表現で確認
+            m = re.match(r'\d{2}.*', step)
+            # 先頭文字が番号でなければ前の行から続き
+            if m is None:
+                if len(recipe_text)>0:
+                    recipe_text[-1] += step.strip()
+                else:
+                    continue
+            # 先頭文字が番号の場合
+            else: 
+                if '\t' in step:
+                    step = step.split('\t')[1].rstrip()
+                    recipe_text.append(step)
+        else:
+            continue
+    return recipe_text
 
 # フォルダ内の画像をジェネレータで出力
 def listup_imgs(path):
-    return [os.path.abspath(p) for p in glob.glob(path)]
-
-# データセットのパス
-cookpad_path = '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/'
-recipe_train = 'recipe_ids/train.txt'
-recipe_valid = 'recipe_ids/val.txt'
-recipe_test = 'recipe_ids/test.txt'
-file_relation = 'cookpad_nii/main/file_relation_list.txt'
-recipe_info = 'cookpad_nii/main/'
-img_path = 'images/steps/'
+    return list(os.path.abspath(p) for p in glob.glob(path))
 
 # train, valid, test それぞれのレシピID（ハッシュ列取得）
-# 訓練用recipe_ids（ハッシュ列） 読み込み
-with open(os.path.join(cookpad_path, recipe_train)) as f:
-    recipe_train = [line.strip() for line in f.readlines()]
-# 検証用recipe_ids（ハッシュ列） 読み込み
-with open(os.path.join(cookpad_path, recipe_valid)) as f:
-    recipe_valid = [line.strip() for line in f.readlines()]
-# 試験用recipe_ids（ハッシュ列） 読み込み
-with open(os.path.join(cookpad_path, recipe_test)) as f:
-    recipe_test = [line.strip() for line in f.readlines()]
+def get_hash(data):
+    with open(f'/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/recipe_ids/{data}.txt') as f:
+        return [line.strip() for line in f.readlines()]
 
-# テキストデータ用意 ----------------------------------------------------------------------------------------------------
-# recipe_ids（ハッシュ列） とそれがどのディレクトリに保存されてるか記してるファイル読み込み
-with open(os.path.join(cookpad_path, file_relation)) as f:
-    file_relation_list = [line.strip().split('\t') for line in f.readlines()]
+def make_dataset(recipe_data):
+    # 二次元配列で返す
+    dataset = []
+    # recipe_ids（ハッシュ列） とそれがどのディレクトリに保存されてるか記してるファイル読み込み
+    with open('/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/cookpad_nii/main/file_relation_list.txt') as f:
+        file_relation_list = [line.strip().split('\t') for line in f.readlines()]
 
-# recipeid と 保存されているディレクトリ のペアの dictionary
-relation_dict = {k: v for (k,v) in file_relation_list}
+    # recipeid と 保存されているディレクトリ のペアの dictionary
+    relation_dict = {k: v for (k,v) in file_relation_list}
 
-# レシピのテキストデータを二次元配列で格納
-step_text_train = []
-step_text_valid = []
-step_text_test = []
-
-
-# # 訓練用レシピのテキストファイルのパス管理
-# recipe_dirs_train = []
-# for recipe in recipe_train:
-#     recipe_dir = relation_dict[recipe]
-#     # 3桁いないのディレクトリ名は前にを足してパス変更
-#     if len(recipe_dir) < 4:
-#         num = 4 - len(recipe_dir)
-#         recipe_dir = cookpad_path + recipe_info + '0' * num + recipe_dir + '/' + recipe + '/' + 'step_memos.txt'
-#         recipe_dirs_train.append(recipe_dir)
-#     else:
-#         continue
-# # 検証用レシピのテキストファイルのパス管理
-# recipe_dirs_valid = []
-# for recipe in recipe_valid:
-#     recipe_dir = relation_dict[recipe]
-#     # 3桁いないのディレクトリ名は前にを足してパス変更
-#     if len(recipe_dir) < 4:
-#         num = 4 - len(recipe_dir)
-#         recipe_dir = cookpad_path + recipe_info + '0' * num + recipe_dir + '/' + recipe + '/' + 'step_memos.txt'
-#         recipe_dirs_valid.append(recipe_dir)
-#     else:
-#         continue
-# # 試験用レシピのテキストファイルのパス管理
-# recipe_dirs_test = []
-# for recipe in recipe_test:
-#     recipe_dir = relation_dict[recipe]
-#     # 3桁いないのディレクトリ名は前にを足してパス変更
-#     if len(recipe_dir) < 4:
-#         num = 4 - len(recipe_dir)
-#         recipe_dir = cookpad_path + recipe_info + '0' * num + recipe_dir + '/' + recipe + '/' + 'step_memos.txt'
-#         recipe_dirs_test.append(recipe_dir)
-#     else:
-#         continue
-
-# # マルチプロセッシング
-# with Pool() as p:
-#     step_text_train = p.map(read_file, recipe_dirs_train)
-#     step_text_valid = p.map(read_file, recipe_dirs_valid)
-#     step_text_test = p.map(read_file, recipe_dirs_test)
-
-
-
-# # 学習用レシピテキストファイル書き込み
-# with open('data/text/train.txt', mode='w') as f:
-#     for steps in step_text_train:
-#         f.write('\t'.join(steps))
-#         f.write('\n')
-# # 検証用レシピテキストファイル書き込み
-# with open('data/text/valid.txt','w') as f:
-#     for steps in step_text_valid:
-#         f.write('\t'.join(steps))
-#         f.write('\n')
-# # # 試験用レシピテキストファイル書き込み
-# with open('data/text/test.txt','w') as f:
-#     for steps in step_text_test:
-#         f.write('\t'.join(steps))
-#         f.write('\n')
-
-
-
-# # ここから画像データ用意------------------------------------------------------------------------------------------------
-# # 学習用のレシピの画像のパスを管理
-# img_dirs_train = []
-# for recipe in recipe_train:
-#     head = recipe[0]
-#     path = cookpad_path + img_path + head + '/' + recipe + '*'
-#     img_dir_train = listup_imgs(path)
-#     img_dirs_train.append(img_dir_train)
-# # 検証用のレシピの画像のパスを管理
-# img_dirs_valid = []
-# for recipe in recipe_valid:
-#     head = recipe[0]
-#     path = cookpad_path + img_path + head + '/' + recipe + '*'
-#     img_dir_valid = listup_imgs(path)
-#     img_dirs_valid.append(img_dir_valid)
-# # 試験用のレシピの画像のパスを管理
-# img_dirs_test = []
-# for recipe in recipe_test:
-#     head = recipe[0]
-#     path = cookpad_path + img_path + head + '/' + recipe + '*'
-#     img_dir_test = listup_imgs(path)
-#     img_dirs_test.append(img_dir_test)
-
-# img_dirs_train, img_dirs_valid, img_dirs_test はそれぞれ二次元配列
-# 各要素は generator なので注意
-
-
-# ------------------------------------------------------------------------------------------------------------------------
-# 画像とテキストまとめてデータセットにする（画像のないデータが存在するので）
-# 訓練用のレシピの画像のパスを管理
-# train_dataset = []
-def make_dataset(recipe_data, relation_dict):
-    # データセットのパス
-    cookpad_path = '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/'
-    recipe_train = 'recipe_ids/train.txt'
-    recipe_valid = 'recipe_ids/val.txt'
-    recipe_test = 'recipe_ids/test.txt'
-    file_relation = 'cookpad_nii/main/file_relation_list.txt'
-    recipe_info = 'cookpad_nii/main/'
-    img_path = 'images/steps/'
+    print('確認しながらテキストと画像のpathを回収していく〜')
     for recipe in tqdm(recipe_data, total=len(recipe_data)):
         # テキスト
         recipe_dir = relation_dict[recipe]
         # 3桁いないのディレクトリ名は前にを足してパス変更
         if len(recipe_dir) < 4:
             num = 4 - len(recipe_dir)
-            recipe_dir = cookpad_path + recipe_info + '0' * num + recipe_dir + '/' + recipe + '/' + 'step_memos.txt'
+            recipe_dir = '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/cookpad_nii/main/' + '0' * num + recipe_dir + '/' + recipe + '/' + 'step_memos.txt'
         else:
             continue
+        # テキストファイル読み込み
         recipe_text = read_file(recipe_dir)
+
+
         # 画像
         head = recipe[0]
-        path = cookpad_path + img_path + head + '/' + recipe + '*'
-        img_dir_train = listup_imgs(path)
-        # 画像の存在するステップのみデータセットに保存
-        for step in natsorted(img_dir_train):
-            # このステップの写真とテキスト
-            image_path = step
-            text = recipe_text[int(step[-5:-4])-1]
-            yield text, image_path
-            # train_dataset.append([text, image_path])
+        path = '/mnt/LSTA5/data/common/recipe/cookpad_image_dataset/images/steps/' + head + '/' + recipe + '*'
+        # globは返すリストの順序を保証しないのでnatsortedで辞書順ソート
+        img_paths = natsorted(glob.glob(path))
+        if len(recipe_text) != len(img_paths):
+            continue
+            # print('あかん')
+            # print('ハッシュ値：', recipe)
+            # print('テキストのパスは')
+            # print(recipe_dir)
+            # print('テキスト数は')
+            # print(len(recipe_text))
+            # print('テキストは')
+            # print(recipe_text)
+            # print('画像のパスは')
+            # print(img_paths)
+
+        # 画像は余分にあるのでテキスト基準で
+        for i in range(len(recipe_text)):
+            dataset.append([recipe_text[i], img_paths[i]])
+
+    return dataset
+ 
+print('train/valid/testに分けられたハッシュ列取得...')
+recipe_train = get_hash('train')
+recipe_valid = get_hash('val')
+recipe_test = get_hash('test')
+
+print('データセットから二次元配列に生テキストと画像パス保管中...')
+train_dataset = make_dataset(recipe_train)
+valid_dataset = make_dataset(recipe_valid)
+test_dataset = make_dataset(recipe_test)
+
+# pickleで保存
+print('pickleで保存')
+with open('/mnt/LSTA5/data/tanaka/data/dataset/train_dataset.pkl', 'wb') as f:
+    pickle.dump(train_dataset, f) 
+with open('/mnt/LSTA5/data/tanaka/data/dataset/valid_dataset.pkl', 'wb') as f:
+    pickle.dump(valid_dataset, f) 
+with open('/mnt/LSTA5/data/tanaka/data/dataset/test_dataset.pkl', 'wb') as f:
+    pickle.dump(test_dataset, f) 
+
+# pickleで読み込み
+with open('/mnt/LSTA5/data/tanaka/data/dataset/train_dataset.pkl', 'rb') as f:
+    train_dataset = pickle.load(f)
+with open('/mnt/LSTA5/data/tanaka/data/dataset/valid_dataset.pkl', 'rb') as f:
+    valid_dataset = pickle.load(f)
+with open('/mnt/LSTA5/data/tanaka/data/dataset/test_dataset.pkl', 'rb') as f:
+    test_dataset = pickle.load(f)
 
 
-# # 検証用のレシピの画像のパスを管理
-# valid_dataset = []
-# for recipe in tqdm(recipe_valid, total=len(recipe_valid)):
-#     # テキスト
-#     recipe_dir = relation_dict[recipe]
-#     # 3桁いないのディレクトリ名は前にを足してパス変更
-#     if len(recipe_dir) < 4:
-#         num = 4 - len(recipe_dir)
-#         recipe_dir = cookpad_path + recipe_info + '0' * num + recipe_dir + '/' + recipe + '/' + 'step_memos.txt'
-#     else:
-#         continue
-#     recipe_text = read_file(recipe_dir)
-#     # 画像
-#     head = recipe[0]
-#     path = cookpad_path + img_path + head + '/' + recipe + '*'
-#     img_dir_valid = listup_imgs(path)
-#     # 画像の存在するステップのみデータセットに保存
-#     for step in natsorted(img_dir_valid):
-#         # このステップの写真とテキスト
-#         image_path = step
-#         text = recipe_text[int(step[-5:-4])-1]
-#         valid_dataset.append([text, image_path])
+print('データセットをDatasetに変換中...')
+Datasetに変換
+train_dataset = MyDataset(train_dataset)
+valid_dataset = MyDataset(valid_dataset)
+test_dataset = MyDataset(test_dataset)
+special_dataset = MyDataset(special_dataset)
 
-
-# # 試験用のレシピの画像のパスを管理
-# test_dataset = []
-# for recipe in tqdm(recipe_test, total=len(recipe_test)):
-#     # テキスト
-#     recipe_dir = relation_dict[recipe]
-#     # 3桁いないのディレクトリ名は前にを足してパス変更
-#     if len(recipe_dir) < 4:
-#         num = 4 - len(recipe_dir)
-#         recipe_dir = cookpad_path + recipe_info + '0' * num + recipe_dir + '/' + recipe + '/' + 'step_memos.txt'
-#     else:
-#         continue
-#     recipe_text = read_file(recipe_dir)
-#     # 画像
-#     head = recipe[0]
-#     path = cookpad_path + img_path + head + '/' + recipe + '*'
-#     img_dir_test = listup_imgs(path)
-#     # 画像の存在するステップのみデータセットに保存
-#     for step in natsorted(img_dir_test):
-#         # このステップの写真とテキスト
-#         image_path = step
-#         text = recipe_text[int(step[-5:-4])-1]
-#         test_dataset.append([text, image_path])
-
-train_dataset = make_dataset(recipe_train, relation_dict)
-valid_dataset = make_dataset(recipe_valid, relation_dict)
-test_dataset = make_dataset(recipe_test, relation_dict)
-
-# [[text, image_path]]のデータセットをpickleで保存
-# ストレージに直列化
-with open('/mnt/LSTA5/data/tanaka/retrieval/dataset/train_dataset.bin.pkl', mode='wb') as fp:
-    pickle.dump(train_dataset, fp)
-with open('/mnt/LSTA5/data/tanaka/retrieval/dataset/valid_dataset.bin.pkl', mode='wb') as fp:
-    pickle.dump(valid_dataset, fp)
-with open('/mnt/LSTA5/data/tanaka/retrieval/dataset/test_dataset.bin.pkl', mode='wb') as fp:
-    pickle.dump(test_dataset, fp)
+# pickleで保存
+print('pickleで保存')
+with open('/mnt/LSTA5/data/tanaka/data/torch_dataset/train_dataset.pkl', 'wb') as f:
+    pickle.dump(train_dataset, f) 
+with open('/mnt/LSTA5/data/tanaka/data/torch_dataset/valid_dataset.pkl', 'wb') as f:
+    pickle.dump(valid_dataset, f) 
+with open('/mnt/LSTA5/data/tanaka/data/torch_dataset/test_dataset.pkl', 'wb') as f:
+    pickle.dump(test_dataset, f) 
