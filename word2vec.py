@@ -12,15 +12,15 @@ def tokenize(sentence):
 
 
 # ファイル読み込み
-with open('/mnt/LSTA5/data/tanaka/retrieval/text/train.txt') as f:
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/text/train.txt') as f:
     train_text = [line.strip() for line in f.readlines()]
     train_text = '\t'.join(train_text)
     train_text = train_text.split('\t')
-with open('/mnt/LSTA5/data/tanaka/retrieval/text/valid.txt') as f:
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/text/valid.txt') as f:
     valid_text = [line.strip() for line in f.readlines()]
     valid_text = '\t'.join(valid_text)
     valid_text = valid_text.split('\t')
-with open('/mnt/LSTA5/data/tanaka/retrieval/text/test.txt') as f:
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/text/test.txt') as f:
     test_text = [line.strip() for line in f.readlines()]
     test_text = '\t'.join(test_text)
     test_text = test_text.split('\t')
@@ -40,7 +40,7 @@ model = Word2Vec(sentences=token_data,
                  min_count=1,
                  workers=8)
 # 保存
-model.save("/mnt/LSTA5/data/tanaka/retrieval/word2vec.model")
+model.save("/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec.model")
 
 # # レシピコーパスで学習したWord2Vec
 # model = Word2Vec.load("/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec.model")
