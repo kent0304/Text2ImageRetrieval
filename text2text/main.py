@@ -1,4 +1,5 @@
 import pickle
+import random
 
 import MeCab
 import numpy as np
@@ -14,12 +15,10 @@ def prepare_recipes():
     with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/dataset/test_dataset.pkl', 'rb') as f:
         test_dataset = pickle.load(f)
     text_data = []
-    cnt = 1
-    for data in test_dataset:
-        if cnt > 1000:
-            break
-        text_data.append(data[0])
-        cnt += 1
+    random.seed(0)
+    idx_list = random.sample(range(len(test_dataset)), k=1000)
+    for idx in idx_list:
+        text_data.append(test_dataset[idx][0])
     return text_data
 
 
@@ -65,18 +64,26 @@ def measurement(target, text_data):
                     key = get_key_from_value(similar_dict, min(similar_dict.values()))
                     del similar_dict[key]
                     similar_dict[data] = similarity
-    return similar_dict
+    return sorted(similar_dict.items(), key=lambda x:x[1])
 
 def main():
     text_data = prepare_recipes()
-    print(sentence_similarity(text2vec(text_data[0]), text2vec(text_data[1])))
+    similar_dict = measurement('豚肉を切る。', text_data)
+    similar_dict2 = measurement('じゃがいもを炒める。', text_data)
+
+    print('豚肉を切る。に近いテキストtop10')
+    for k, v in similar_dict.items():
+        print(k, v)
+
+    print('')
+
+    print('じゃがいもを炒める。に近いテキストtop10')
+    for k, v in similar_dict2.items():
+        print(k, v)
 
 
 
 if __name__ == '__main__':
-    text_data = prepare_recipes()
-    similar_dict = measurement('人参を切る', text_data)
-    for k, v in similar_dict:
-        print(k, v)
+    main()
 
 
