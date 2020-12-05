@@ -11,24 +11,6 @@ from torchvision import models
 from PIL import Image
 
 
-# モデル定義
-class OriginalResNet(nn.Module):
-    def __init__(self, metric_dim=300):
-        super().__init__()
-        # 事前学習済みのresnet50をダウンロード
-        resnet = models.resnet50(pretrained=True) 
-        # 最終層以外はそのまま利用
-        modules = list(resnet.children())[:-1]
-        self.model = nn.Sequential(*modules)
-        # 全てのパラメータを微分対象外にする
-        for params in self.model.parameters():
-            params.requires_grad = False
-        
-    def forward(self, x):
-        x = self.model(x)
-        x = x.view(x.size(0), -1)
-        # x = self.fc(x)
-        return x
 
 class TripletModel(nn.Module):
     def __init__(self):
