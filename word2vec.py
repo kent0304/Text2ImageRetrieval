@@ -35,20 +35,38 @@ token_data = []
 for sentence in tqdm(text):
     token_data.append(tokenize(sentence))
 
-# 頻出ワード確認
-flatten_list = list(itertools.chain.from_iterable(token_data))
-fdist = Counter(flatten_list)
-stop_words = fdist.most_common(n=100)
-print(stop_words)
+# # 頻出ワード確認
+# flatten_list = list(itertools.chain.from_iterable(token_data))
+# fdist = Counter(flatten_list)
+# stop_words = fdist.most_common(n=100)
+# print(stop_words)
 
 # word2vecモデル学習（gensim version 3.80）
-model = Word2Vec(sentences=token_data,
+model_300 = Word2Vec(sentences=token_data,
                  size=300,
                  window=5,
                  min_count=1,
                  workers=8)
 # 保存
-model.save("/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec.model")
+model_300.save("/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec_300.model")
+
+# word2vecモデル学習（gensim version 3.80）
+model_200 = Word2Vec(sentences=token_data,
+                 size=200,
+                 window=5,
+                 min_count=1,
+                 workers=8)
+# 保存
+model_200.save("/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec_200.model")
+
+# word2vecモデル学習（gensim version 3.80）
+model_100 = Word2Vec(sentences=token_data,
+                 size=100,
+                 window=5,
+                 min_count=1,
+                 workers=8)
+# 保存
+model_200.save("/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec_100.model")
 
 
 # # レシピコーパスで学習したWord2Vec
