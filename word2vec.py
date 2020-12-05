@@ -2,6 +2,8 @@ import re
 import MeCab
 from gensim.models import Word2Vec
 from tqdm import tqdm
+import itertools
+from collections import Counter
 
 
 # 形態素解析
@@ -33,6 +35,12 @@ token_data = []
 for sentence in tqdm(text):
     token_data.append(tokenize(sentence))
 
+# 頻出ワード確認
+flatten_list = list(itertools.chain.from_iterable(token_data))
+fdist = Counter(flatten_list)
+stop_words = fdist.most_common(n=100)
+print(stop_words)
+
 # word2vecモデル学習（gensim version 3.80）
 model = Word2Vec(sentences=token_data,
                  size=300,
@@ -41,6 +49,7 @@ model = Word2Vec(sentences=token_data,
                  workers=8)
 # 保存
 model.save("/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec.model")
+
 
 # # レシピコーパスで学習したWord2Vec
 # model = Word2Vec.load("/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec.model")
