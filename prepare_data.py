@@ -15,7 +15,7 @@ from PIL import Image
 from multiprocessing import Pool
 from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader
-from emb_image import OriginalResNet, TripletModel
+from model import OriginalResNet, TripletModel
 from gensim.models import Word2Vec
 
 # special_dataset = [
@@ -30,7 +30,7 @@ from gensim.models import Word2Vec
 
 
 # レシピコーパスで学習したWord2Vec
-model = Word2Vec.load("/mnt/LSTA5/data/tanaka/data/word2vec.model")
+model = Word2Vec.load("/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec.model")
 # GPU対応
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # 損失関数
@@ -52,7 +52,8 @@ class MyDataset(Dataset):
     def __init__(self, dataset, text_model=model, transformer=transformer):
         self.data_num = len(dataset)
         self.sentence_vec = []
-        self.image_paths = []
+        self.image_vec = []
+        image_net.eval()
         for text, image_path in tqdm(dataset, total=self.data_num):
             if text=='' or image_path=='':
                 continue
@@ -71,16 +72,18 @@ class MyDataset(Dataset):
             self.sentence_vec.append(sentence)
 
             # 画像のベクトル化
-            # image = transformer(Image.open(image_path).convert('RGB'))
-            self.image_paths.append(image_path)
+            image = transformer(Image.open(image_path).convert('RGB')).unsqueeze(0)
+            image = image_net(image)
+            # image = torch.from_numpy(image).clone()
+            self.image_vec.append(image)
     
     def __len__(self):
         return self.data_num
 
     def __getitem__(self, idx):
         sentence_vec = self.sentence_vec[idx]
-        image_path = self.image_paths[idx]
-        return sentence_vec, image_path
+        image_vec = self.image_vec[idx]
+        return sentence_vec, image_vec
 
 
 # ファイルの読み込み
@@ -176,41 +179,43 @@ recipe_train = get_hash('train')
 recipe_valid = get_hash('val')
 recipe_test = get_hash('test')
 
-print('データセットから二次元配列に生テキストと画像パス保管中...')
-train_dataset = make_dataset(recipe_train)
-valid_dataset = make_dataset(recipe_valid)
-test_dataset = make_dataset(recipe_test)
+# print('データセットから二次元配列に生テキストと画像パス保管中...')
+# train_dataset = make_dataset(recipe_train)
+# valid_dataset = make_dataset(recipe_valid)
+# test_dataset = make_dataset(recipe_test)
 
-# pickleで保存
-print('pickleで保存')
-with open('/mnt/LSTA5/data/tanaka/data/dataset/train_dataset.pkl', 'wb') as f:
-    pickle.dump(train_dataset, f) 
-with open('/mnt/LSTA5/data/tanaka/data/dataset/valid_dataset.pkl', 'wb') as f:
-    pickle.dump(valid_dataset, f) 
-with open('/mnt/LSTA5/data/tanaka/data/dataset/test_dataset.pkl', 'wb') as f:
-    pickle.dump(test_dataset, f) 
+# # pickleで保存
+# print('pickleで保存')
+# with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/dataset/train_dataset.pkl', 'wb') as f:
+#     pickle.dump(train_dataset, f) 
+# with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/dataset/valid_dataset.pkl', 'wb') as f:
+#     pickle.dump(valid_dataset, f) 
+# with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/dataset/test_dataset.pkl', 'wb') as f:
+#     pickle.dump(test_dataset, f) 
 
 # pickleで読み込み
-with open('/mnt/LSTA5/data/tanaka/data/dataset/train_dataset.pkl', 'rb') as f:
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/dataset/train_dataset.pkl', 'rb') as f:
     train_dataset = pickle.load(f)
-with open('/mnt/LSTA5/data/tanaka/data/dataset/valid_dataset.pkl', 'rb') as f:
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/dataset/valid_dataset.pkl', 'rb') as f:
     valid_dataset = pickle.load(f)
-with open('/mnt/LSTA5/data/tanaka/data/dataset/test_dataset.pkl', 'rb') as f:
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/dataset/test_dataset.pkl', 'rb') as f:
     test_dataset = pickle.load(f)
 
 
 print('データセットをDatasetに変換中...')
-Datasetに変換
 train_dataset = MyDataset(train_dataset)
 valid_dataset = MyDataset(valid_dataset)
 test_dataset = MyDataset(test_dataset)
-special_dataset = MyDataset(special_dataset)
+print(test_dataset[0])
+print(type(test_dataset[0][0]))
+print(type(test_dataset[0][1]))
+# special_dataset = MyDataset(special_dataset)
 
 # pickleで保存
 print('pickleで保存')
-with open('/mnt/LSTA5/data/tanaka/data/torch_dataset/train_dataset.pkl', 'wb') as f:
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/train_dataset.pkl', 'wb') as f:
     pickle.dump(train_dataset, f) 
-with open('/mnt/LSTA5/data/tanaka/data/torch_dataset/valid_dataset.pkl', 'wb') as f:
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/valid_dataset.pkl', 'wb') as f:
     pickle.dump(valid_dataset, f) 
-with open('/mnt/LSTA5/data/tanaka/data/torch_dataset/test_dataset.pkl', 'wb') as f:
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/test_dataset.pkl', 'wb') as f:
     pickle.dump(test_dataset, f) 
