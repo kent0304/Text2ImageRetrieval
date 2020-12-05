@@ -16,7 +16,7 @@ def prepare_recipes():
         test_dataset = pickle.load(f)
     text_data = []
     random.seed(0)
-    idx_list = random.sample(range(len(test_dataset)), k=1000)
+    idx_list = random.sample(range(len(test_dataset)), k=500)
     for idx in idx_list:
         text_data.append(test_dataset[idx][0])
     return text_data
@@ -69,17 +69,17 @@ def measurement(target, text_data):
 def main():
     text_data = prepare_recipes()
     similar_dict = measurement('豚肉を切る。', text_data)
-    similar_dict2 = measurement('じゃがいもを炒める。', text_data)
-
+    
     print('豚肉を切る。に近いテキストtop10')
-    for k, v in similar_dict.items():
-        print(k, v)
+    for _ in similar_dict:
+        print(_)
 
     print('')
 
+    similar_dict2 = measurement('じゃがいもを炒める。', text_data)
     print('じゃがいもを炒める。に近いテキストtop10')
-    for k, v in similar_dict2.items():
-        print(k, v)
+    for _ in similar_dict2:
+        print(_)
 
 
 
