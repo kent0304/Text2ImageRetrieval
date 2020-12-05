@@ -41,3 +41,10 @@ model = Word2Vec(sentences=token_data,
                  workers=8)
 # 保存
 model.save("/mnt/LSTA5/data/tanaka/retrieval/word2vec.model")
+
+# # レシピコーパスで学習したWord2Vec
+# model = Word2Vec.load("/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec.model")
+
+# results = model.most_similar(positive=['人参'])
+# for result in results:
+#     print(result)
