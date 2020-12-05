@@ -21,8 +21,8 @@ word2vec_path = "/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec.model"
 model = Word2Vec.load(word2vec_path)
 # 学習済みモデル読み込み
 head_model_path = '/mnt/LSTA5/data/tanaka/retrieval/text2image/model/'
-#triplet_model = model.load_state_dict(torch.load(head_model_path + 'model_2048_50.pth', map_location=torch.device('cpu')))
 triplet_model = TripletModel()
+triplet_model.load_state_dict(torch.load(head_model_path + 'model_2048_400.pth', map_location=torch.device('cpu')))
 # GPU対応
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # 損失関数
@@ -128,15 +128,35 @@ def my_plot(train_losses, valid_losses):
 
 
 def main():
+    # 評価モード
+    triplet_model.eval()
+    image_net.eval()
     # pickleでdatasetとdataloader読み込み 
     print('pickelでdataset読み込み中...')
     with open(test_dataset_path, 'rb') as f:
         test_dataset = pickle.load(f)
     print('完了')
+    #test_loader = DataLoader(test_dataset, batch_size=2048, shuffle=False)
+    #evaluation = eval_net(triplet_model,image_net, test_loader, test_dataset, triplet_loss, device)
 
-    test_loader = DataLoader(test_dataset, batch_size=2048, shuffle=False)
+    # Recall@K
+    k_list = [1, 5, 10, 50, 100]
 
-    eval_net(triplet_model,image_net, test_loader, test_dataset, triplet_loss, device)
+    for i in range(len(test_dataset)):
+        for j in range(len(test_dataset)):
+            text_vec = test_dataset[i][0]
+            image_path = test_dataset[j][1]
+            image = transformer(Image.open(image_path).convert('RGB')).unsqueeze(0)
+            image_vec = image_net(image)
+            print(text_vec.shape)
+            print(image_vec.shape)
+            
+   
+
+
+
+
+    # MedR
 
 if __name__ == '__main__':
     main()
