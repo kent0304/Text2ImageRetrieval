@@ -34,3 +34,19 @@ valid_losses_path = '/mnt/LSTA5/data/tanaka/retrieval/text2image/losses/valid_lo
 # loss画像保存先
 losspng_path = '/mnt/LSTA5/data/tanaka/retrieval/text2image/loss_png'
 ```
+
+# Result
+## Baseline
+- Recall@K
+- MedR: 97
+
+## with Stopwords
+### with word2vec100
+- Recall@K:  [0.018, 0.065, 0.108, 0.361, 0.521]
+- MedR: 92
+### with word2vec200
+- Recall@K:
+- MedR: 
+### with word2vec300
+- Recall@K
+- MedR: 70
