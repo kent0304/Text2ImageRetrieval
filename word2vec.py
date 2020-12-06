@@ -30,7 +30,7 @@ with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/text/test.txt') as f:
 # レシピコーパス  
 text = train_text + valid_text + test_text
 
-# 二次元配列で形態素を管理
+# 二次元配列で形態素を管d理
 token_data = []
 for sentence in tqdm(text):
     token_data.append(tokenize(sentence))
@@ -66,7 +66,7 @@ model_100 = Word2Vec(sentences=token_data,
                  min_count=1,
                  workers=8)
 # 保存
-model_200.save("/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec_100.model")
+model_100.save("/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec_100.model")
 
 
 # # レシピコーパスで学習したWord2Vec
