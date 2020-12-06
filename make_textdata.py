@@ -26,10 +26,14 @@ with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/dataset/valid_dataset.pkl
 with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/dataset/test_dataset.pkl', 'rb') as f:
     test_dataset = pickle.load(f)
 
+# レシピコーパスで学習したWord2Vec
+text_model_100 = Word2Vec.load("/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec_100.model")
+# レシピコーパスで学習したWord2Vec
+text_model_200 = Word2Vec.load("/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec_200.model")
+# レシピコーパスで学習したWord2Vec
+text_model_300 = Word2Vec.load("/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec_300.model")
 
-def mydataset(dataset):
-    # レシピコーパスで学習したWord2Vec
-    text_model = Word2Vec.load("/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec.model")
+def mydataset(dataset, text_model):
     data_num = len(dataset)
     sentence_vec = []
     for data in tqdm(dataset, total=data_num):
@@ -37,9 +41,12 @@ def mydataset(dataset):
         # 形態素解析
         mecab = MeCab.Tagger("-Owakati")
         token_list = mecab.parse(text).split()
+        stopwords = ['を', '。', 'に', '、', 'て', 'の', 'で', 'ます', 'し', 'は', 'が', 'た', 'と', 'たら', '分', 'です', 'も', 'お', '！', '!', '１', '・', '（', '）', 'さ', 'まで', 'から', '1', '０', '♪', '２', '～', 'せ', '2', '３', '☆', 'ば', '５', '3', '(', ')']
         # 文全体をベクトル化
         sentence_sum = np.zeros(text_model.wv.vectors.shape[1], )
         for token in token_list:
+            if token in stopwords:
+                continue
             if token in text_model.wv:
                 sentence_sum += text_model.wv[token]
             else:
@@ -49,15 +56,41 @@ def mydataset(dataset):
         sentence_vec.append(sentence)
     return sentence_vec
 
-train_sentence_vec = mydataset(train_dataset)
-valid_sentence_vec = mydataset(valid_dataset)
-test_sentence_vec = mydataset(test_dataset)
+train_sentence_vec = mydataset(train_dataset, text_model=text_model_100)
+valid_sentence_vec = mydataset(valid_dataset, text_model=text_model_100)
+test_sentence_vec = mydataset(test_dataset, text_model=text_model_100)
 
 # pickleで保存
 print('pickleで保存')
-with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/train_sentence_vec.pkl', 'wb') as f:
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/word2vec100/train_sentence_vec.pkl', 'wb') as f:
     pickle.dump(train_sentence_vec, f) 
-with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/valid_sentence_vec.pkl', 'wb') as f:
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/word2vec100/valid_sentence_vec.pkl', 'wb') as f:
     pickle.dump(valid_sentence_vec, f) 
-with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/test_sentence_vec.pkl', 'wb') as f:
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/word2vec100/test_sentence_vec.pkl', 'wb') as f:
+    pickle.dump(test_sentence_vec, f) 
+
+train_sentence_vec = mydataset(train_dataset, text_model=text_model_200)
+valid_sentence_vec = mydataset(valid_dataset, text_model=text_model_200)
+test_sentence_vec = mydataset(test_dataset, text_model=text_model_200)
+
+# pickleで保存
+print('pickleで保存')
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/word2vec200/train_sentence_vec.pkl', 'wb') as f:
+    pickle.dump(train_sentence_vec, f) 
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/word2vec200/valid_sentence_vec.pkl', 'wb') as f:
+    pickle.dump(valid_sentence_vec, f) 
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/word2vec200/test_sentence_vec.pkl', 'wb') as f:
+    pickle.dump(test_sentence_vec, f) 
+
+train_sentence_vec = mydataset(train_dataset, text_model=text_model_300)
+valid_sentence_vec = mydataset(valid_dataset, text_model=text_model_300)
+test_sentence_vec = mydataset(test_dataset, text_model=text_model_300)
+
+# pickleで保存
+print('pickleで保存')
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/word2vec300/train_sentence_vec.pkl', 'wb') as f:
+    pickle.dump(train_sentence_vec, f) 
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/word2vec300/valid_sentence_vec.pkl', 'wb') as f:
+    pickle.dump(valid_sentence_vec, f) 
+with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/word2vec300/test_sentence_vec.pkl', 'wb') as f:
     pickle.dump(test_sentence_vec, f) 
