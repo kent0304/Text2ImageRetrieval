@@ -1,5 +1,6 @@
 import pickle
 import random
+import statistics
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -18,14 +19,14 @@ from model import TripletModel
 device = torch.device('cuda:1')
 # テスト用データセット
 test_dataset_path = '/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/test_dataset.pkl'
-# word2vecの学習モデル
-word2vec_path = "/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec.model"
-# レシピコーパスで学習したWord2Vec
-model = Word2Vec.load(word2vec_path)
+# # word2vecの学習モデル
+# word2vec_path = "/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec.model"
+# # レシピコーパスで学習したWord2Vec
+# model = Word2Vec.load(word2vec_path)
 # 学習済みモデル読み込み
 head_model_path = '/mnt/LSTA5/data/tanaka/retrieval/text2image/model/'
 triplet_model = TripletModel()
-triplet_model.load_state_dict(torch.load(head_model_path + 'model_epoch400.pth', map_location=device))
+triplet_model.load_state_dict(torch.load(head_model_path + 'stopwords300_model_epoch400.pth', map_location=device))
 # 損失関数
 triplet_loss = nn.TripletMarginLoss()
 
@@ -80,14 +81,15 @@ def recall_text2image(triplet_model, dataset, k_list, device=device) -> list:
     triplet_model = triplet_model.to(device)
     data_num = len(dataset)
     recall_list = []
-    for k in k_list:
-        sim_dict = {}
-        score = k
+    for k in k_list:  
+        
+        score = 0
         for i in tqdm(range(data_num), total=data_num):
+            sim_dict = {}
             for j in range(data_num):
                 text = dataset[i][0].to(device)
                 image = dataset[j][1].to(device)
-                text_vec, image_vec = triplet_model(text.float(), image.float())
+                text_vec, image_vec, _, _ = triplet_model(text.float(), image.float(), text.float(), image.float())
                 similarity = cos_sim(text_vec.cpu().detach().numpy(), image_vec.cpu().detach().numpy())
                 if len(sim_dict) < k:
                     sim_dict[str(j)] = similarity
@@ -100,13 +102,68 @@ def recall_text2image(triplet_model, dataset, k_list, device=device) -> list:
             if str(i) in sim_dict.keys():
                 score += 1
         # kでのrecall算出
-        recall = score / datanum 
+        recall = score / data_num 
+        recall_list.append(recall)
+    return recall_list
+
+def recall_image2text(triplet_model, dataset, k_list, device=device) -> list:
+    # 辞書の値からキー抽出
+    def get_key_from_value(d, val) -> str:
+        keys = [k for k, v in d.items() if v == val]
+        if keys:
+            return keys[0]
+        return None
+
+    triplet_model.eval()
+    triplet_model = triplet_model.to(device)
+    data_num = len(dataset)
+    recall_list = []
+    for k in k_list:  
+        
+        score = 0
+        for i in tqdm(range(data_num), total=data_num):
+            sim_dict = {}
+            for j in range(data_num):
+                text = dataset[j][0].to(device)
+                image = dataset[i][1].to(device)
+                text_vec, image_vec, _, _ = triplet_model(text.float(), image.float(), text.float(), image.float())
+                similarity = cos_sim(text_vec.cpu().detach().numpy(), image_vec.cpu().detach().numpy())
+                if len(sim_dict) < k:
+                    sim_dict[str(i)] = similarity
+                else:
+                    if min(sim_dict.values()) < similarity:
+                        key = get_key_from_value(sim_dict, min(sim_dict.values()))
+                        del sim_dict[key]
+                        sim_dict[str(i)] = similarity
+            # text i に対して最も近い image j の辞書 にiが含まれるか
+            if str(i) in sim_dict.keys():
+                score += 1
+        # kでのrecall算出
+        recall = score / data_num 
         recall_list.append(recall)
     return recall_list
 
 # MedR
-def medr_text2image():
-    return None
+
+def medr_text2image(triplet_model, dataset, device=device) -> list:
+    triplet_model.eval()
+    triplet_model = triplet_model.to(device)
+    data_num = len(dataset)
+ 
+    med_list = []
+    for i in tqdm(range(data_num), total=data_num):
+        sim_dict = {}
+        for j in range(data_num):
+            text = dataset[i][0].to(device)
+            image = dataset[j][1].to(device)
+            text_vec, image_vec, _, _ = triplet_model(text.float(), image.float(), text.float(), image.float())
+            similarity = cos_sim(text_vec.cpu().detach().numpy(), image_vec.cpu().detach().numpy())
+            sim_dict[str(j)] = similarity
+        sim_list = sorted(sim_dict.items(), key=lambda x:x[1], reverse=True)
+        idx = sim_list.index([tup for tup in sim_list if tup[0] == str(i)][0])+1
+        med_list.append(idx)
+
+    return statistics.median(med_list)
 
 
             
@@ -117,21 +174,32 @@ def medr_text2image():
 def main():
     print('pickelでdataset読み込み中...')
     data_path = '/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/'
-    # sentence_vec 読み込み
-    with open(data_path + 'test_sentence_vec.pkl', 'rb') as f:
+    # # sentence_vec 読み込み
+    # with open(data_path + 'test_sentence_vec.pkl', 'rb') as f:
+    #     test_sentence_vec = pickle.load(f)
+    with open(data_path + 'word2vec300/test_sentence_vec.pkl', 'rb') as f:
         test_sentence_vec = pickle.load(f)
     # image_vec 読み込み
     with open(data_path + 'test_image_vec.pkl', 'rb') as f:
         test_image_vec = pickle.load(f)
     # PyTorch の Dataset に格納
     test_dataset = MyDataset(test_sentence_vec, test_image_vec)
-    test_loader = DataLoader(test_dataset, batch_size=4096, shuffle=False)
+    test_dataset = random.sample(list(test_dataset), 1000)
 
     # Recall@K
     k_list = [1, 5, 10, 50, 100]
     recall_text2image_list = recall_text2image(triplet_model=triplet_model, dataset=test_dataset, k_list=k_list)
-    print(recall_text2image_list)
-            
+    print('Recall@K(text2image):', recall_text2image_list)
+    # recall_image2text_list = recall_text2image(triplet_model=triplet_model, dataset=test_dataset, k_list=k_list)
+    # print('Recall@K(image2text):', recall_image2text_list)
+
+
+
+    # medr
+    medr = medr_text2image(triplet_model=triplet_model, dataset=test_dataset)
+    print('MedR:',int(medr))
+        
+    print('word2vecを100次元にしてstopwordsも導入したときの結果です。')
    
 
 

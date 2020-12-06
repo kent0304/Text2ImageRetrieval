@@ -15,23 +15,26 @@ from model import TripletModel
 from matplotlib import pyplot as plt
 plt.switch_backend('agg')
 
-# word2vecの学習モデル
-word2vec_path = "/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec.model"
+# # word2vecの学習モデル
+# word2vec_voca = 'word2vec100/'
+# word2vec_voca = 'word2vec200/'
+word2vec_voca = 'word2vec300/'
+# word2vec_path = "/mnt/LSTA5/data/tanaka/retrieval/text2image/word2vec.model"
 # 学習済みモデル保存パス先頭部分
 head_model_path = '/mnt/LSTA5/data/tanaka/retrieval/text2image/model/'
 # 学習時のloss値保存先
-train_losses_path = '/mnt/LSTA5/data/tanaka/retrieval/text2image/losses/train_losses.2048.pkl'
-valid_losses_path = '/mnt/LSTA5/data/tanaka/retrieval/text2image/losses/valid_losses.2048.pkl'
+train_losses_path = '/mnt/LSTA5/data/tanaka/retrieval/text2image/losses/stopwords300_train_losses.pkl'
+valid_losses_path = '/mnt/LSTA5/data/tanaka/retrieval/text2image/losses/stopwords300_valid_losses.pkl'
 # loss画像保存先
-losspng_path = '/mnt/LSTA5/data/tanaka/retrieval/text2image/loss_png'
+# losspng_path = '/mnt/LSTA5/data/tanaka/retrieval/text2image/loss200_png'
 
-# レシピコーパスで学習したWord2Vec
-model = Word2Vec.load(word2vec_path)
+# # レシピコーパスで学習したWord2Vec
+# model = Word2Vec.load(word2vec_path)
 # GPU対応
 #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device('cuda:1')
+device = torch.device('cuda:0')
 # 損失関数
-triplet_loss = nn.TripletMarginLoss(margin=1.0)
+triplet_loss = nn.TripletMarginLoss(margin=1.5)
 # 学習させるモデル
 triplet_model = TripletModel()
 
@@ -74,11 +77,11 @@ class MyDataset(Dataset):
 data_path = '/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/'
 
 print('sentence_vec 読み込み中...')
-with open(data_path + 'train_sentence_vec.pkl', 'rb') as f:
+with open(data_path + word2vec_voca + 'train_sentence_vec.pkl', 'rb') as f:
     train_sentence_vec = pickle.load(f)
-with open(data_path + 'valid_sentence_vec.pkl', 'rb') as f:
+with open(data_path + word2vec_voca + 'valid_sentence_vec.pkl', 'rb') as f:
     valid_sentence_vec = pickle.load(f)
-with open(data_path + 'test_sentence_vec.pkl', 'rb') as f:
+with open(data_path + word2vec_voca + 'test_sentence_vec.pkl', 'rb') as f:
     test_sentence_vec = pickle.load(f)
 
 print('image_vec 読み込み中...')
@@ -93,6 +96,11 @@ with open(data_path + 'test_image_vec.pkl', 'rb') as f:
 train_dataset = MyDataset(train_sentence_vec, train_image_vec)
 valid_dataset = MyDataset(valid_sentence_vec, valid_image_vec)
 test_dataset = MyDataset(test_sentence_vec, test_image_vec)
+
+# print(test_dataset[0][0])
+# print(test_dataset[0][0].shape)
+# print(test_dataset[0][1].shape)
+
 
 
 print('DatasetをDataLoaderにセッティング中...')
@@ -114,7 +122,6 @@ def eval_net(triplet_model, data_loader, dataset, loss=triplet_loss, device=devi
             negative_image = dataset[random_idx][1]
             if negative_text is not x and negative_image is not y:
                 break
-
         # 画像ベクトルの推測値
         with torch.no_grad():
             # GPU設定
@@ -123,11 +130,8 @@ def eval_net(triplet_model, data_loader, dataset, loss=triplet_loss, device=devi
             negative_text = negative_text.to(device)
             negative_image = negative_image.to(device)
             # それぞれの次元を512で統一するニューラル
-            anchor_text, positive_image = triplet_model(x.float(), y.float())
-            negative_text, negative_image = triplet_model(negative_text.float(), negative_image.float())
-            positive_text, anchor_image = triplet_model(x.float(), y.float())
-
-        output = loss(anchor_text, positive_image, negative_image) + loss(anchor_image, positive_text, negative_text)
+            pos_text, pos_image, neg_text, neg_image = triplet_model(x.float(), y.float(), negative_text.float(), negative_image.float())
+        output = loss(pos_text, pos_image, neg_image) + loss(pos_image, pos_text, neg_text)
         outputs.append(output.item())
 
     return sum(outputs) / i 
@@ -161,11 +165,9 @@ def train_net(triplet_model, train_loader, valid_loader, train_dataset, valid_da
             negative_image = negative_image.to(device)
 
             # それぞれの次元を512で統一するニューラル
-            anchor_text, positive_image = triplet_model(xx.float(), yy.float())
-            negative_text, negative_image = triplet_model(negative_text.float(), negative_image.float())
-            positive_text, anchor_image = triplet_model(xx.float(), yy.float())
+            pos_text, pos_image, neg_text, neg_image = triplet_model(xx.float(), yy.float(), negative_text.float(), negative_image.float())
 
-            output = loss(anchor_text, positive_image, negative_image) + loss(anchor_image, positive_text, negative_text)
+            output = loss(pos_text, pos_image, neg_image) + loss(pos_image, pos_text, neg_text)
             optimizer.zero_grad()
             output.backward()
             optimizer.step()
@@ -181,7 +183,7 @@ def train_net(triplet_model, train_loader, valid_loader, train_dataset, valid_da
         # 学習モデル保存
         if (epoch+1)%50==0:
             # 学習させたモデルの保存パス
-            model_path = head_model_path + f'model_epoch{epoch+1}.pth'
+            model_path = head_model_path + f'stopwords300_model_epoch{epoch+1}.pth'
             # モデル保存
             torch.save(triplet_model.to('cpu').state_dict(), model_path)
             # loss保存
@@ -207,7 +209,7 @@ def my_plot(train_losses, valid_losses):
     #グラフの凡例
     plt.legend()
     # グラフ画像保存
-    fig.savefig('loss.png')
+    fig.savefig('loss_stopwords300.png')
 
 train_net(triplet_model, train_loader=train_loader, valid_loader=valid_loader, train_dataset=train_dataset, valid_dataset=valid_dataset,  device=device)
 
