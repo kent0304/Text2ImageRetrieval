@@ -1,4 +1,3 @@
-# OriginalResnetは2048次元の特徴量を出力する学習済みモデル
 # TripletModel300次元のテキストと2048次元の画像を512次元にそれぞれ合わせるモデル
 import torch
 from torch import nn, optim
@@ -11,19 +10,13 @@ from torchvision import models
 from PIL import Image
 
 
-
 class TripletModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.image_fc1 = nn.Linear(2048, 1536)
         self.image_fc2 = nn.Linear(1536, 1024)
         self.image_fc3 = nn.Linear(1024, 512)
-        # self.text_fc1 = nn.Linear(100, 256)
-        # self.text_fc2 = nn.Linear(256, 400)
-        # self.text_fc3 = nn.Linear(400, 512)
-        # self.text_fc1 = nn.Linear(200, 256)
-        # self.text_fc2 = nn.Linear(256, 400)
-        # self.text_fc3 = nn.Linear(400, 512)
+
         self.text_fc1 = nn.Linear(300, 372)
         self.text_fc2 = nn.Linear(372, 446)
         self.text_fc3 = nn.Linear(446, 512)
