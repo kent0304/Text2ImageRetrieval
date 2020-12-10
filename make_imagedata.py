@@ -4,12 +4,8 @@ import numpy as np
 import pickle
 from PIL import Image
 from torchvision import transforms, models
-# import sys
-# from importlib import reload
-# reload(sys)
-# sys.setdefaultencoding("utf-8")
+
 # GPU対応
-#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = torch.device('cuda:0')
 # device = torch.device('cpu')
 
@@ -59,7 +55,6 @@ def mydataset(dataset):
         
     return image_vec
 
-print('はじめます')
 
 valid_image_vec = mydataset(valid_dataset)
 with open('/mnt/LSTA5/data/tanaka/retrieval/text2image/torch_dataset/valid_image_vec.pkl', 'wb') as f:
