@@ -54,6 +54,7 @@ def mydataset(dataset, text_model):
         sentence = sentence_sum / cnt
         sentence = torch.from_numpy(sentence).clone()
         sentence_vec.append(sentence)
+
     return sentence_vec
 
 train_sentence_vec = mydataset(train_dataset, text_model=text_model_300)
